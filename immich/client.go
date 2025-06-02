@@ -3,8 +3,10 @@ package immich
 import (
 	"crypto/tls"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/simulot/immich-go/internal/filetypes"
@@ -17,14 +19,16 @@ Immich API documentation https://documentation.immich.app/docs/api/introduction
 */
 
 type ImmichClient struct {
-	client              *http.Client
-	roundTripper        *http.Transport
-	endPoint            string                   // Server API url
-	key                 string                   // User KEY
-	DeviceUUID          string                   // Device
-	Retries             int                      // Number of attempts on 500 errors
-	RetriesDelay        time.Duration            // Duration between retries
-	apiTraceWriter      io.Writer                // If not nil, logs API calls to this writer
+	client         *http.Client
+	roundTripper   *http.Transport
+	endPoint       string        // Server API url
+	key            string        // User KEY
+	DeviceUUID     string        // Device
+	Retries        int           // Number of attempts on 500 errors
+	RetriesDelay   time.Duration // Duration between retries
+	apiTraceWriter io.Writer     // If not nil, logs API calls to this writer
+	apiTraceLock   sync.Mutex    // Lock for API trace
+
 	supportedMediaTypes filetypes.SupportedMedia // Server's list of supported medias
 	dryRun              bool                     //  If true, do not send any data to the server
 }
@@ -61,6 +65,7 @@ func OptionVerifySSL(verify bool) clientOption {
 func OptionConnectionTimeout(d time.Duration) clientOption {
 	return func(ic *ImmichClient) error {
 		ic.client.Timeout = d
+		ic.client.Transport.(*http.Transport).ResponseHeaderTimeout = d
 		return nil
 	}
 }
@@ -94,6 +99,12 @@ func NewImmichClient(endPoint string, key string, options ...clientOption) (*Imm
 			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 			MaxIdleConnsPerHost: 100,
 			MaxConnsPerHost:     100,
+			Dial: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).Dial,
+			TLSHandshakeTimeout:   30 * time.Second,
+			ResponseHeaderTimeout: 20 * time.Minute,
 		},
 		key:          key,
 		DeviceUUID:   deviceUUID,
@@ -102,7 +113,7 @@ func NewImmichClient(endPoint string, key string, options ...clientOption) (*Imm
 	}
 
 	ic.client = &http.Client{
-		Timeout:   time.Second * 60,
+		Timeout:   time.Minute * 20,
 		Transport: ic.roundTripper,
 	}
 

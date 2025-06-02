@@ -15,6 +15,8 @@ type UpLoadMode int
 const (
 	UpModeGoogleTakeout UpLoadMode = iota
 	UpModeFolder
+	UpModeICloud
+	UpModePicasa
 )
 
 func (m UpLoadMode) String() string {
@@ -23,6 +25,10 @@ func (m UpLoadMode) String() string {
 		return "Google Takeout"
 	case UpModeFolder:
 		return "Folder"
+	case UpModeICloud:
+		return "iCloud"
+	case UpModePicasa:
+		return "Picasa"
 	default:
 		return "Unknown"
 	}
@@ -32,6 +38,9 @@ func (m UpLoadMode) String() string {
 type UploadOptions struct {
 	// TODO place this option at the top
 	NoUI bool // Disable UI
+
+	// Add Overwrite flag to UploadOptions
+	Overwrite bool // Always overwrite files on the server with local versions
 
 	Filters []filters.Filter
 }
@@ -46,9 +55,12 @@ func NewUploadCommand(ctx context.Context, a *app.Application) *cobra.Command {
 	app.AddClientFlags(ctx, cmd, a, false)
 	cmd.TraverseChildren = true
 	cmd.PersistentFlags().BoolVar(&options.NoUI, "no-ui", false, "Disable the user interface")
+	cmd.PersistentFlags().BoolVar(&options.Overwrite, "overwrite", false, "Always overwrite files on the server with local versions")
 	cmd.PersistentPreRunE = app.ChainRunEFunctions(cmd.PersistentPreRunE, options.Open, ctx, cmd, a)
 
 	cmd.AddCommand(NewFromFolderCommand(ctx, cmd, a, options))
+	cmd.AddCommand(NewFromICloudCommand(ctx, cmd, a, options))
+	cmd.AddCommand(NewFromPicasaCommand(ctx, cmd, a, options))
 	cmd.AddCommand(NewFromGooglePhotosCommand(ctx, cmd, a, options))
 	cmd.AddCommand(NewFromImmichCommand(ctx, cmd, a, options))
 	return cmd

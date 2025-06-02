@@ -51,7 +51,6 @@ func (ui *uiPage) restoreLogger(app *app.Application) {
 
 func (upCmd *UpCmd) runUI(ctx context.Context, app *app.Application) error {
 	ctx, cancel := context.WithCancelCause(ctx)
-
 	uiApp := tview.NewApplication()
 	ui := upCmd.newUI(ctx, app)
 
@@ -98,7 +97,7 @@ func (upCmd *UpCmd) runUI(ctx context.Context, app *app.Application) error {
 					tick.Stop()
 					return
 				case <-tick.C:
-					jobs, err := upCmd.app.Client().Immich.GetJobs(ctx)
+					jobs, err := upCmd.app.Client().AdminImmich.GetJobs(ctx)
 					if err == nil {
 						jobCount := 0
 						jobWaiting := 0
@@ -166,6 +165,7 @@ func (upCmd *UpCmd) runUI(ctx context.Context, app *app.Application) error {
 	uiGroup.Go(func() error {
 		var groupChan chan *assets.Group
 		var err error
+
 		processGrp := errgroup.Group{}
 		processGrp.Go(func() error {
 			// Get immich asset
@@ -197,9 +197,12 @@ func (upCmd *UpCmd) runUI(ctx context.Context, app *app.Application) error {
 
 		// we can upload assets
 		err = upCmd.uploadLoop(ctx, groupChan)
-		if err != nil {
-			return context.Cause(ctx)
-		}
+		// if err != nil {
+		// 	return context.Cause(ctx)
+		// }
+
+		err = errors.Join(err, upCmd.finishing(ctx, app))
+
 		uploadDone.Store(true)
 		counts := app.Jnl().GetCounts()
 		if counts[fileevent.Error]+counts[fileevent.UploadServerError] > 0 {
@@ -283,7 +286,7 @@ func (upCmd *UpCmd) newUI(ctx context.Context, a *app.Application) *uiPage {
 	ui.addCounter(ui.uploadCounts, 5, "Server has better quality", fileevent.UploadServerBetter)
 	ui.uploadCounts.SetSize(6, 2, 1, 1).SetColumns(30, 10)
 
-	if _, err := a.Client().Immich.GetJobs(ctx); err == nil {
+	if _, err := a.Client().AdminImmich.GetJobs(ctx); err == nil {
 		ui.watchJobs = true
 
 		ui.serverJobs = tvxwidgets.NewSparkline()

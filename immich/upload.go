@@ -15,9 +15,11 @@ import (
 	"github.com/simulot/immich-go/internal/assets"
 )
 
+type callValues string
+
 const (
-	TimeFormat    = "2006-01-02T15:04:05Z"
-	ctxCallValues = "call-values"
+	TimeFormat    string     = "2006-01-02T15:04:05Z"
+	ctxCallValues callValues = "call-values"
 )
 
 func setContextValue(kv map[string]string) serverRequestOption {
@@ -98,10 +100,13 @@ func (ic *ImmichClient) uploadAsset(ctx context.Context, la *assets.Asset, endPo
 	switch endPoint {
 	case EndPointAssetUpload:
 		errCall = ic.newServerCall(ctx, EndPointAssetUpload).
-			do(postRequest("/assets", m.FormDataContentType(), setContextValue(callValues), setAcceptJSON(), setBody(body)), responseJSON(&ar))
+			do(postRequest("/assets", m.FormDataContentType(), setContextValue(callValues), setAcceptJSON(), setImmichChecksum(la), setBody(body)), responseJSON(&ar))
 	case EndPointAssetReplace:
 		errCall = ic.newServerCall(ctx, EndPointAssetReplace).
-			do(putRequest("/assets/"+replaceID+"/original", setContextValue(callValues), setAcceptJSON(), setContentType(m.FormDataContentType()), setBody(body)), responseJSON(&ar))
+			do(putRequest("/assets/"+replaceID+"/original", setContextValue(callValues), setAcceptJSON(), setImmichChecksum(la), setContentType(m.FormDataContentType()), setBody(body)), responseJSON(&ar))
+	}
+	if ar.Status == "duplicate" && errors.Is(err, io.ErrClosedPipe) {
+		err = nil // immich closes the connection when we upload the x-immich-checksum header and it finds a duplicate
 	}
 	err = errors.Join(err, errCall)
 	return ar, err
@@ -109,15 +114,16 @@ func (ic *ImmichClient) uploadAsset(ctx context.Context, la *assets.Asset, endPo
 
 func (ic *ImmichClient) prepareCallValues(la *assets.Asset, s fs.FileInfo, ext, mtype string) map[string]string {
 	callValues := map[string]string{}
+
 	callValues["deviceAssetId"] = fmt.Sprintf("%s-%d", path.Base(la.OriginalFileName), s.Size())
 	callValues["deviceId"] = ic.DeviceUUID
 	callValues["assetType"] = mtype
 	if !la.CaptureDate.IsZero() {
 		callValues["fileCreatedAt"] = la.CaptureDate.Format(TimeFormat)
 	} else {
-		callValues["fileCreatedAt"] = s.ModTime().Format(TimeFormat)
+		callValues["fileCreatedAt"] = s.ModTime().UTC().Format(TimeFormat)
 	}
-	callValues["fileModifiedAt"] = s.ModTime().Format(TimeFormat)
+	callValues["fileModifiedAt"] = s.ModTime().UTC().Format(TimeFormat)
 	callValues["isFavorite"] = myBool(la.Favorite).String()
 	callValues["fileExtension"] = ext
 	callValues["duration"] = formatDuration(0)

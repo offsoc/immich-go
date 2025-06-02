@@ -18,10 +18,10 @@ func (ic *ImmichClient) PingServer(ctx context.Context) error {
 	b := bytes.NewBuffer(nil)
 	err := ic.newServerCall(ctx, EndPointPingServer).do(getRequest("/server/ping", setAcceptJSON()), responseCopy(b), responseJSON(&r))
 	if err != nil {
-		return fmt.Errorf("unexpected response to the immich's ping API at this address: %s:\n%s", ic.endPoint+"/server/ping", b.String())
+		return fmt.Errorf("error while calling the immich's ping API at this address: %s:\n%s", ic.endPoint+"/server/ping", err.Error())
 	}
 	if r.Res != "pong" {
-		return fmt.Errorf("incorrect ping response: %s", r.Res)
+		return fmt.Errorf("unexpected response to the immich's ping API at this address: %s:\n%s", ic.endPoint+"/server/ping", b.String())
 	}
 	return nil
 }
@@ -68,6 +68,33 @@ func (ic *ImmichClient) GetServerStatistics(ctx context.Context) (ServerStatisti
 
 	err := ic.newServerCall(ctx, EndPointGetServerStatistics).do(getRequest("/server/statistics", setAcceptJSON()), responseJSON(&s))
 	return s, err
+}
+
+// getAboutInfo
+type AboutInfo struct {
+	Version       string `json:"version"`
+	VersionURL    string `json:"versionUrl"`
+	Licensed      bool   `json:"licensed"`
+	Build         string `json:"build"`
+	BuildURL      string `json:"buildUrl"`
+	BuildImage    string `json:"buildImage"`
+	BuildImageURL string `json:"buildImageUrl"`
+	Repository    string `json:"repository"`
+	RepositoryURL string `json:"repositoryUrl"`
+	SourceRef     string `json:"sourceRef"`
+	SourceCommit  string `json:"sourceCommit"`
+	SourceURL     string `json:"sourceUrl"`
+	Nodejs        string `json:"nodejs"`
+	Exiftool      string `json:"exiftool"`
+	Ffmpeg        string `json:"ffmpeg"`
+	Libvips       string `json:"libvips"`
+	Imagemagick   string `json:"imagemagick"`
+}
+
+func (ic *ImmichClient) GetAboutInfo(ctx context.Context) (AboutInfo, error) {
+	var a AboutInfo
+	err := ic.newServerCall(ctx, EndPointGetAboutInfo).do(getRequest("/server/about", setAcceptJSON()), responseJSON(&a))
+	return a, err
 }
 
 // getAssetStatistics

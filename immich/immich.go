@@ -57,10 +57,11 @@ type ImmichClientInterface interface {
 	GetServerStatistics(ctx context.Context) (ServerStatistics, error)
 	GetAssetStatistics(ctx context.Context) (UserStatistics, error)
 	SupportedMedia() filetypes.SupportedMedia
+	GetAboutInfo(ctx context.Context) (AboutInfo, error)
 }
 
 type ImmichAlbumInterface interface {
-	GetAllAlbums(ctx context.Context) ([]assets.Album, error)
+	GetAllAlbums(ctx context.Context) ([]AlbumSimplified, error)
 	GetAlbumInfo(ctx context.Context, id string, withoutAssets bool) (AlbumContent, error)
 	CreateAlbum(
 		ctx context.Context,
@@ -70,7 +71,7 @@ type ImmichAlbumInterface interface {
 	) (assets.Album, error)
 
 	// GetAssetAlbums get all albums that an asset belongs to
-	GetAssetAlbums(ctx context.Context, assetID string) ([]assets.Album, error)
+	GetAssetAlbums(ctx context.Context, assetID string) ([]AlbumSimplified, error)
 	DeleteAlbum(ctx context.Context, id string) error
 }
 type ImmichTagInterface interface {
@@ -99,7 +100,7 @@ type ImmichJobInterface interface {
 	GetJobs(ctx context.Context) (map[string]Job, error)
 	SendJobCommand(
 		ctx context.Context,
-		jobID JobID,
+		jobID string,
 		command JobCommand,
 		force bool,
 	) (SendJobCommandResponse, error)
@@ -147,7 +148,7 @@ func (t ImmichTime) MarshalJSON() ([]byte, error) {
 		return json.Marshal("")
 	}
 
-	return json.Marshal(t.Time.Format("\"" + time.RFC3339 + "\""))
+	return json.Marshal(t.Format("\"" + time.RFC3339 + "\""))
 }
 
 type ImmichExifTime struct {
@@ -196,5 +197,5 @@ func (t ImmichExifTime) MarshalJSON() ([]byte, error) {
 		return json.Marshal("")
 	}
 
-	return json.Marshal(t.Time.Format("\"" + time.RFC3339 + "\""))
+	return json.Marshal(t.Format("\"" + time.RFC3339 + "\""))
 }

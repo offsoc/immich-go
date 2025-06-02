@@ -12,9 +12,33 @@ import (
 	"time"
 
 	"github.com/simulot/immich-go/immich"
+	cliflags "github.com/simulot/immich-go/internal/cliFlags"
 	"github.com/simulot/immich-go/internal/configuration"
 	"github.com/spf13/cobra"
 )
+
+type Client struct {
+	Server string // Immich server address (http://<your-ip>:2283/api or https://<your-domain>/api)
+	// API                string                 // Immich api endpoint (http://container_ip:3301)
+	APIKey      string // API Key
+	AdminAPIKey string // API Key for admin
+
+	APITrace                  bool                        // Enable API call traces
+	SkipSSL                   bool                        // Skip SSL Verification
+	ClientTimeout             time.Duration               // Set the client request timeout
+	DeviceUUID                string                      // Set a device UUID
+	DryRun                    bool                        // Protect the server from changes
+	TimeZone                  string                      // Override default TZ
+	TZ                        *time.Location              // Time zone to use
+	APITraceWriter            io.WriteCloser              // API tracer
+	APITraceWriterName        string                      // API trace log name
+	Immich                    immich.ImmichInterface      // Immich client
+	AdminImmich               immich.ImmichInterface      // Immich client for admin
+	ClientLog                 *slog.Logger                // Logger
+	OnServerErrors            cliflags.OnServerErrorsFlag // Behavior on server errors
+	User                      immich.User                 // User info corresponding to the API key
+	PauseImmichBackgroundJobs bool                        // Pause Immich background jobs
+}
 
 // add server flags to the command cmd
 func AddClientFlags(ctx context.Context, cmd *cobra.Command, app *Application, dryRun bool) {
@@ -23,12 +47,16 @@ func AddClientFlags(ctx context.Context, cmd *cobra.Command, app *Application, d
 
 	cmd.PersistentFlags().StringVarP(&client.Server, "server", "s", client.Server, "Immich server address (example http://your-ip:2283 or https://your-domain)")
 	cmd.PersistentFlags().StringVarP(&client.APIKey, "api-key", "k", "", "API Key")
+	cmd.PersistentFlags().StringVar(&client.AdminAPIKey, "admin-api-key", "", "Admin's API Key for managing server's jobs")
 	cmd.PersistentFlags().BoolVar(&client.APITrace, "api-trace", false, "Enable trace of api calls")
+
+	cmd.PersistentFlags().BoolVar(&client.PauseImmichBackgroundJobs, "pause-immich-jobs", true, "Pause Immich background jobs during upload operations")
 	cmd.PersistentFlags().BoolVar(&client.SkipSSL, "skip-verify-ssl", false, "Skip SSL verification")
-	cmd.PersistentFlags().DurationVar(&client.ClientTimeout, "client-timeout", 5*time.Minute, "Set server calls timeout")
+	cmd.PersistentFlags().DurationVar(&client.ClientTimeout, "client-timeout", 20*time.Minute, "Set server calls timeout")
 	cmd.PersistentFlags().StringVar(&client.DeviceUUID, "device-uuid", client.DeviceUUID, "Set a device UUID")
 	cmd.PersistentFlags().BoolVar(&client.DryRun, "dry-run", dryRun, "Simulate all actions")
 	cmd.PersistentFlags().StringVar(&client.TimeZone, "time-zone", client.TimeZone, "Override the system time zone")
+	cmd.PersistentFlags().Var(&client.OnServerErrors, "on-server-errors", "Action to take on server errors, (stop|continue| <n> errors)")
 
 	cmd.PersistentPreRunE = ChainRunEFunctions(cmd.PersistentPreRunE, OpenClient, ctx, cmd, app)
 	cmd.PersistentPostRunE = ChainRunEFunctions(cmd.PersistentPostRunE, CloseClient, ctx, cmd, app)
@@ -88,6 +116,7 @@ func OpenClient(ctx context.Context, cmd *cobra.Command, app *Application) error
 				return err
 			}
 			client.Immich.EnableAppTrace(client.APITraceWriter)
+			client.AdminImmich.EnableAppTrace(client.APITraceWriter)
 		}
 		app.log.Message("Check the API-TRACE file: %s", client.APITraceWriterName)
 	}
@@ -105,23 +134,6 @@ func CloseClient(ctx context.Context, cmd *cobra.Command, app *Application) erro
 	return nil
 }
 
-type Client struct {
-	Server string // Immich server address (http://<your-ip>:2283/api or https://<your-domain>/api)
-	// API                string                 // Immich api endpoint (http://container_ip:3301)
-	APIKey             string                 // API Key
-	APITrace           bool                   // Enable API call traces
-	SkipSSL            bool                   // Skip SSL Verification
-	ClientTimeout      time.Duration          // Set the client request timeout
-	DeviceUUID         string                 // Set a device UUID
-	DryRun             bool                   // Protect the server from changes
-	TimeZone           string                 // Override default TZ
-	TZ                 *time.Location         // Time zone to use
-	APITraceWriter     io.WriteCloser         // API tracer
-	APITraceWriterName string                 // API trace log name
-	Immich             immich.ImmichInterface // Immich client
-	ClientLog          *slog.Logger           // Logger
-}
-
 func (client *Client) Initialize(ctx context.Context, app *Application) error {
 	var joinedErr error
 
@@ -130,8 +142,8 @@ func (client *Client) Initialize(ctx context.Context, app *Application) error {
 		if client.Server == "" {
 			joinedErr = errors.Join(joinedErr, errors.New("missing the parameter --server, Immich server address (http://<your-ip>:2283 or https://<your-domain>)"))
 		}
-		if client.APIKey == "" {
-			joinedErr = errors.Join(joinedErr, errors.New("missing the parameter --api-key, Immich API key"))
+		if client.APIKey == "" && client.AdminAPIKey == "" {
+			joinedErr = errors.Join(joinedErr, errors.New("missing the parameter --api-key and/or --admin-api-key, Immich API keys"))
 		}
 
 		if client.APITrace {
@@ -148,6 +160,13 @@ func (client *Client) Initialize(ctx context.Context, app *Application) error {
 func (client *Client) Open(ctx context.Context) error {
 	var err error
 
+	if client.APIKey == "" && client.AdminAPIKey != "" {
+		client.APIKey = client.AdminAPIKey
+		client.ClientLog.Warn("The parameter --api-key is empty. Using the admin's API key for for photos upload")
+	} else if client.AdminAPIKey == "" && client.APIKey != "" {
+		client.AdminAPIKey = client.APIKey
+	}
+
 	client.ClientLog.Info("Connection to the server " + client.Server)
 	client.Immich, err = immich.NewImmichClient(
 		client.Server,
@@ -155,6 +174,17 @@ func (client *Client) Open(ctx context.Context) error {
 		immich.OptionVerifySSL(client.SkipSSL),
 		immich.OptionConnectionTimeout(client.ClientTimeout),
 		immich.OptionDryRun(client.DryRun),
+	)
+	if err != nil {
+		return err
+	}
+
+	adminTime := max(client.ClientTimeout, 10*time.Second)
+	client.AdminImmich, err = immich.NewImmichClient(
+		client.Server,
+		client.AdminAPIKey,
+		immich.OptionVerifySSL(client.SkipSSL),
+		immich.OptionConnectionTimeout(adminTime),
 	)
 	if err != nil {
 		return err
@@ -171,6 +201,7 @@ func (client *Client) Open(ctx context.Context) error {
 				return err
 			}
 			client.Immich.EnableAppTrace(client.APITraceWriter)
+			client.AdminImmich.EnableAppTrace(client.APITraceWriter)
 		}
 	}
 
@@ -184,7 +215,16 @@ func (client *Client) Open(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	client.ClientLog.Info(fmt.Sprintf("Connected, user: %s", user.Email))
+	client.User = user
+
+	about, err := client.Immich.GetAboutInfo(ctx)
+	if err != nil {
+		return err
+	}
+	client.ClientLog.Info("Server information:", "version", about.Version)
+
+	client.ClientLog.Info(fmt.Sprintf("Connected, user: %s, ID: %s", user.Email, user.ID))
+
 	if client.DryRun {
 		client.ClientLog.Info("Dry-run mode enabled. No changes will be made to the server.")
 	}

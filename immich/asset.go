@@ -2,6 +2,7 @@ package immich
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -36,7 +37,7 @@ type Asset struct {
 	StackParentID    string            `json:"stackParentId"`
 	Albums           []AlbumSimplified `json:"-"` // Albums that asset belong to
 	Tags             []TagSimplified   `json:"tags"`
-	// JustUploaded     bool              `json:"-"` // TO REMOVE
+	LibraryID        string            `json:"libraryId,omitempty"`
 }
 
 // NewAssetFromImmich creates an assets.Asset from an immich.Asset.
@@ -54,8 +55,9 @@ func (ia Asset) AsAsset() *assets.Asset {
 		Latitude:         ia.ExifInfo.Latitude,
 		Longitude:        ia.ExifInfo.Longitude,
 		File:             fshelper.FSName(nil, ia.OriginalFileName),
+		FileSize:         int(ia.ExifInfo.FileSizeInByte),
+		Checksum:         ia.Checksum,
 	}
-	a.FileSize = int(ia.ExifInfo.FileSizeInByte)
 	for _, album := range ia.Albums {
 		a.Albums = append(a.Albums, assets.Album{
 			Title:       album.AlbumName,
@@ -117,6 +119,12 @@ func formatDuration(duration time.Duration) string {
 
 	return fmt.Sprintf("%02d:%02d:%02d.%06d", hours, minutes, seconds, milliseconds)
 }
+
+const (
+	StatusCreated   = "created"
+	StatusReplaced  = "replaced"
+	StatusDuplicate = "duplicate"
+)
 
 func (ic *ImmichClient) AssetUpload(ctx context.Context, la *assets.Asset) (AssetResponse, error) {
 	return ic.uploadAsset(ctx, la, EndPointAssetUpload, "")
@@ -200,14 +208,40 @@ func (ic *ImmichClient) UpdateAssets(ctx context.Context, ids []string,
 
 // UpdAssetField is used to update asset with fields given in the struct fields
 type UpdAssetField struct {
-	IsArchived       bool      `json:"isArchived"`
-	IsFavorite       bool      `json:"isFavorite"`
+	IsArchived       bool      `json:"isArchived,omitempty"`
+	IsFavorite       bool      `json:"isFavorite,omitempty"`
 	Latitude         float64   `json:"latitude,omitempty"`
 	Longitude        float64   `json:"longitude,omitempty"`
 	Description      string    `json:"description,omitempty"`
 	Rating           int       `json:"rating,omitempty"`
-	LivePhotoVideoID string    `json:"livePhotoVideoId,omitempty"`
 	DateTimeOriginal time.Time `json:"dateTimeOriginal,omitempty"`
+}
+
+// MarshalJSON customizes the JSON marshaling for the UpdAssetField struct.
+// If either Latitude or Longitude is non-zero, it includes them in the JSON output.
+// Otherwise, it omits them by using the alias type.
+func (u UpdAssetField) MarshalJSON() ([]byte, error) {
+	// withGPS is a struct that always includes Latitude and Longitude in the JSON output.
+	type withGPS struct {
+		IsArchived       bool      `json:"isArchived,omitempty"`
+		IsFavorite       bool      `json:"isFavorite,omitempty"`
+		Latitude         float64   `json:"latitude"`
+		Longitude        float64   `json:"longitude"`
+		Description      string    `json:"description,omitempty"`
+		Rating           int       `json:"rating,omitempty"`
+		DateTimeOriginal time.Time `json:"dateTimeOriginal,omitempty"`
+	}
+
+	// alias is used to omit Latitude and Longitude when they are zero.
+	type alias UpdAssetField
+
+	// Check if Latitude or Longitude is non-zero, and use withGPS if true.
+	if u.Latitude != 0 || u.Longitude != 0 {
+		return json.Marshal(withGPS(u))
+	}
+
+	// Otherwise, use alias to omit Latitude and Longitude.
+	return json.Marshal(alias(u))
 }
 
 func (ic *ImmichClient) UpdateAsset(ctx context.Context, id string, param UpdAssetField) (*Asset, error) {

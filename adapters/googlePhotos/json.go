@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -80,7 +81,7 @@ func (gmd GoogleMetaData) LogValue() slog.Value {
 func (gmd GoogleMetaData) AsMetadata(name fshelper.FSAndName, tagPeople bool) *assets.Metadata {
 	md := assets.Metadata{
 		File:        name,
-		FileName:    gmd.Title,
+		FileName:    sanitizedTitle(gmd.Title),
 		Description: gmd.Description,
 		Trashed:     gmd.Trashed,
 		Archived:    gmd.Archived,
@@ -92,7 +93,11 @@ func (gmd GoogleMetaData) AsMetadata(name fshelper.FSAndName, tagPeople bool) *a
 		if md.Latitude == 0 && md.Longitude == 0 && gmd.GeoData != nil {
 			md.Latitude, md.Longitude = gmd.GeoData.Latitude, gmd.GeoData.Longitude
 		}
+	} else if gmd.GeoData != nil {
+		md.Latitude, md.Longitude = gmd.GeoData.Latitude, gmd.GeoData.Longitude
 	}
+
+	// PhotoTakenTime is always present, but sometimes it's nul
 	if gmd.PhotoTakenTime != nil && gmd.PhotoTakenTime.Timestamp != "" && gmd.PhotoTakenTime.Timestamp != "0" {
 		md.DateTaken = gmd.PhotoTakenTime.Time()
 	}
@@ -257,4 +262,9 @@ func addString(s string, sep string, t string) string {
 		return s + sep + t
 	}
 	return t
+}
+
+func sanitizedTitle(title string) string {
+	// Simple removal of commonly invalid filename characters
+	return regexp.MustCompile(`[\r\n\\/:*?"<>|]`).ReplaceAllString(title, "_")
 }

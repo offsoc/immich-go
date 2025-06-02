@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/simulot/immich-go/internal/assets"
 	"github.com/simulot/immich-go/internal/fshelper"
 )
 
@@ -37,6 +38,7 @@ const (
 	EndPointGetAllTags             = "GetAllTags"
 	EndPointAssetUpload            = "AssetUpload"
 	EndPointAssetReplace           = "AssetReplace"
+	EndPointGetAboutInfo           = "GetAboutInfo"
 )
 
 type TooManyInternalError struct {
@@ -137,7 +139,9 @@ type requestFunction func(sc *serverCall) *http.Request
 
 var callSequence atomic.Int64
 
-const ctxCallSequenceID = "api-call-sequence"
+type callSequenceID string
+
+const ctxCallSequenceID callSequenceID = "api-call-sequence"
 
 func (sc *serverCall) request(
 	method string,
@@ -154,8 +158,10 @@ func (sc *serverCall) request(
 	}
 	opts = append(opts, setAPIKey())
 	for _, opt := range opts {
-		if sc.joinError(opt(sc, req)) != nil {
-			return nil
+		if opt != nil {
+			if sc.joinError(opt(sc, req)) != nil {
+				return nil
+			}
 		}
 	}
 	return req
@@ -218,7 +224,18 @@ func (sc *serverCall) do(fnRequest requestFunction, opts ...serverResponseOption
 	resp, err = sc.ic.client.Do(req)
 	// any non nil error must be returned
 	if err != nil {
-		_ = sc.joinError(err)
+		err = sc.joinError(err)
+		if sc.ic.apiTraceWriter != nil && sc.endPoint != EndPointGetJobs {
+			seq := sc.ctx.Value(ctxCallSequenceID)
+			fmt.Fprintln(
+				sc.ic.apiTraceWriter,
+				time.Now().Format(time.RFC3339),
+				"RESPONSE",
+				seq,
+				sc.endPoint,
+			)
+			fmt.Fprintln(sc.ic.apiTraceWriter, "  Error:", err.Error())
+		}
 		return sc.Err(req, nil, nil)
 	}
 
@@ -245,9 +262,6 @@ func (sc *serverCall) do(fnRequest requestFunction, opts ...serverResponseOption
 					fmt.Fprintln(sc.ic.apiTraceWriter, "-- response body --")
 					dec := json.NewEncoder(newLimitWriter(sc.ic.apiTraceWriter, 100))
 					dec.SetIndent("", " ")
-					if err := dec.Encode(msg); err != nil {
-						// return sc.Err(req, resp, &msg)
-					}
 					fmt.Fprint(sc.ic.apiTraceWriter, "-- response body end --\n\n")
 				}
 				return sc.Err(req, resp, &msg)
@@ -275,7 +289,9 @@ func (sc *serverCall) do(fnRequest requestFunction, opts ...serverResponseOption
 
 	// We have a success
 	for _, opt := range opts {
-		_ = sc.joinError(opt(sc, resp))
+		if opt != nil {
+			_ = sc.joinError(opt(sc, resp))
+		}
 	}
 	if sc.err != nil {
 		return sc.Err(req, resp, nil)
@@ -288,6 +304,16 @@ type serverRequestOption func(sc *serverCall, req *http.Request) error
 func setBody(body io.ReadCloser) serverRequestOption {
 	return func(sc *serverCall, req *http.Request) error {
 		req.Body = body
+		return nil
+	}
+}
+
+func setImmichChecksum(a *assets.Asset) serverRequestOption {
+	if a.Checksum == "" {
+		return nil
+	}
+	return func(sc *serverCall, req *http.Request) error {
+		req.Header.Set("x-immich-checksum", a.Checksum)
 		return nil
 	}
 }
@@ -317,9 +343,6 @@ func setJSONBody(object any) serverRequestOption {
 	return func(sc *serverCall, req *http.Request) error {
 		b := bytes.NewBuffer(nil)
 		enc := json.NewEncoder(b)
-		if sc.ic.apiTraceWriter != nil && sc.endPoint != EndPointGetJobs {
-			enc.SetIndent("", " ")
-		}
 		err := enc.Encode(object)
 		if err != nil {
 			return err
@@ -347,8 +370,11 @@ func responseJSON[T any](object *T) serverResponseOption {
 				if resp.StatusCode == http.StatusNoContent {
 					return nil
 				}
-				err := json.NewDecoder(resp.Body).Decode(object)
+
 				if sc.ic.apiTraceWriter != nil && sc.endPoint != EndPointGetJobs {
+					sc.ic.apiTraceLock.Lock()
+					defer sc.ic.apiTraceLock.Unlock()
+					resp.Body = hijackBody(resp.Body, sc.ic.apiTraceWriter)
 					seq := sc.ctx.Value(ctxCallSequenceID)
 					fmt.Fprintln(
 						sc.ic.apiTraceWriter,
@@ -359,12 +385,18 @@ func responseJSON[T any](object *T) serverResponseOption {
 						resp.Request.Method,
 						resp.Request.URL.String(),
 					)
+					fmt.Fprintln(sc.ic.apiTraceWriter, "  Header:")
+					for k, v := range resp.Header {
+						fmt.Fprintln(sc.ic.apiTraceWriter, "    ", k, ":", strings.Join(v, "; "))
+					}
 					fmt.Fprintln(sc.ic.apiTraceWriter, "  Status:", resp.Status)
-					fmt.Fprintln(sc.ic.apiTraceWriter, "-- response body --")
-					dec := json.NewEncoder(newLimitWriter(sc.ic.apiTraceWriter, 100))
-					dec.SetIndent("", " ")
-					_ = dec.Encode(object)
-					fmt.Fprint(sc.ic.apiTraceWriter, "-- response body end --\n\n")
+					fmt.Fprintln(sc.ic.apiTraceWriter, "-- response body start --")
+					defer fmt.Fprint(sc.ic.apiTraceWriter, "\n-- response body end --\n\n")
+				}
+
+				err := json.NewDecoder(resp.Body).Decode(object)
+				if err != nil {
+					err = fmt.Errorf("can't decode JSON response: %w", err)
 				}
 				return err
 			}

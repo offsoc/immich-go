@@ -102,6 +102,9 @@ func readMP4Metadata(r io.Reader) (*assets.Metadata, error) {
 	if t.Year() < 2000 {
 		t = atom.ModificationTime
 	}
+	if t.Year() < 2000 {
+		t = time.Time{}
+	}
 	return &assets.Metadata{DateTaken: t}, nil
 }
 
@@ -169,41 +172,22 @@ func readDateTime(x *exif.Exif, dateTag exif.FieldName, subSecTag exif.FieldName
 	if err == nil {
 		subSec += "000"
 		date = date + "." + subSec[:3]
-		return time.ParseInLocation("2006:01:02 15:04:05.000", date, local)
 	}
-	return time.ParseInLocation("2006:01:02 15:04:05", date, local)
+	return parseExifTime(date, local)
 }
 
-/*
-// readGPSTimeStamp extract the date from the GPS data
-
-	func readGPSTimeStamp(x *exif.Exif, _ *time.Location) (time.Time, error) {
-		tag, err := getTagSting(x, exif.GPSDateStamp)
-		if err == nil {
-			var tags *tiff.Tag
-			tags, err = x.Get(exif.GPSTimeStamp)
-			if err == nil {
-				tag = tag + " " + fmt.Sprintf("%02d:%02d:%02dZ", ratToInt(tags, 0), ratToInt(tags, 1), ratToInt(tags, 2))
-				t, err := time.ParseInLocation("2006:01:02 15:04:05Z", tag, time.UTC)
-				if err == nil {
-					return t, nil
-				}
-			}
-		}
-		return time.Time{}, err
+func parseExifTime(date string, local *time.Location) (time.Time, error) {
+	date = strings.TrimSpace(date)
+	var year, month, day, hour, minutes, sec, milli int
+	date = strings.ReplaceAll(date, "-", ":")
+	date = strings.ReplaceAll(date, "/", ":")
+	_, err := fmt.Sscanf(date, "%d:%d:%d %d:%d:%d.%d", &year, &month, &day, &hour, &minutes, &sec, &milli)
+	if (err != nil && err.Error() != "unexpected EOF") || year < 1900 || month == 0 || day == 0 {
+		return time.Time{}, fmt.Errorf("invalid date format")
 	}
-
-	func ratToInt(t *tiff.Tag, i int) int {
-		n, d, err := t.Rat2(i)
-		if err != nil {
-			return 0
-		}
-		if d == 1 {
-			return int(n)
-		}
-		return int(float64(n) / float64(d))
-	}
-*/
+	d := time.Date(year, time.Month(month), day, hour, minutes, sec, milli*int(time.Millisecond), local)
+	return d, nil
+}
 
 func getTagSting(x *exif.Exif, tagName exif.FieldName) (string, error) {
 	t, err := x.Get(tagName)

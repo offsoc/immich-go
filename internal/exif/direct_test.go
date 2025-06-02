@@ -81,6 +81,92 @@ func Test_MetadataFromDirectRead(t *testing.T) {
 	}
 }
 
+func Test_parseExifTime(t *testing.T) {
+	tests := []struct {
+		name     string
+		date     string
+		location *time.Location
+		want     time.Time
+		wantErr  bool
+	}{
+		{
+			name:     "valid date with different separators in local timezone",
+			date:     "2023-10-06 08:30:00",
+			location: time.Local,
+			want:     time.Date(2023, 10, 6, 8, 30, 0, 0, time.Local),
+			wantErr:  false,
+		},
+		{
+			name:     "valid date with milliseconds in local timezone",
+			date:     "2023-10-06 08:30:00.123",
+			location: time.Local,
+			want:     time.Date(2023, 10, 6, 8, 30, 0, int(123*time.Millisecond), time.Local),
+			wantErr:  false,
+		},
+		{
+			name:     "valid date with different separators in UTC timezone",
+			date:     "2023-10-06 08:30:00",
+			location: time.UTC,
+			want:     time.Date(2023, 10, 6, 8, 30, 0, 0, time.UTC),
+			wantErr:  false,
+		},
+		{
+			name:     "valid date with milliseconds in UTC timezone",
+			date:     "2023/10/06 08:30:00.123",
+			location: time.UTC,
+			want:     time.Date(2023, 10, 6, 8, 30, 0, int(123*time.Millisecond), time.UTC),
+			wantErr:  false,
+		},
+		{
+			name:     "date format with different separators",
+			date:     "2023/10/06 08:30:00",
+			location: time.Local,
+			want:     time.Date(2023, 10, 6, 8, 30, 0, 0, time.Local),
+			wantErr:  false,
+		},
+		{
+			name:     "date format with milliseconds",
+			date:     "2023/10/06 08:30:00.123",
+			location: time.Local,
+			want:     time.Date(2023, 10, 6, 8, 30, 0, int(123*time.Millisecond), time.Local),
+			wantErr:  false,
+		},
+		{
+			name:     "empty date string",
+			date:     "",
+			location: time.Local,
+			want:     time.Time{},
+			wantErr:  true,
+		},
+		{
+			name:     "date string with extra spaces",
+			date:     "  2023-10-06 08:30:00  ",
+			location: time.Local,
+			want:     time.Date(2023, 10, 6, 8, 30, 0, 0, time.Local),
+			wantErr:  false,
+		},
+		{
+			name:     "date string with extra spaces and milliseconds",
+			date:     "  2023-10-06 08:30:00.123  ",
+			location: time.Local,
+			want:     time.Date(2023, 10, 6, 8, 30, 0, int(123*time.Millisecond), time.Local),
+			wantErr:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseExifTime(tt.date, tt.location)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseExifTime() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.want.IsZero() && !got.Equal(tt.want) {
+				t.Errorf("parseExifTime() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func floatEquals(a, b, epsilon float64) bool {
 	return (a-b) < epsilon && (b-a) < epsilon
 }

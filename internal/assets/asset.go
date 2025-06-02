@@ -1,12 +1,15 @@
 package assets
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
+	"path"
 	"time"
 
 	"github.com/simulot/immich-go/internal/fshelper"
 	"github.com/simulot/immich-go/internal/fshelper/cachereader"
+	"github.com/simulot/immich-go/internal/fshelper/hash"
 )
 
 /*
@@ -25,10 +28,10 @@ import (
 
 type Asset struct {
 	// File system and file name
-	File          fshelper.FSAndName
-	FileDate      time.Time // File creation date
-	ID            string    // Immich ID after upload
-	DeviceAssetID string    // file name on the input (as delivered in the takeout) + file size
+	File     fshelper.FSAndName
+	FileDate time.Time // File creation date
+	ID       string    // Immich ID after upload
+	Checksum string    // Hash of the file as delivered by Immich
 
 	// Common fields
 	OriginalFileName string // File name as delivered to Immich/Google
@@ -107,6 +110,10 @@ func (a *Asset) UseMetadata(md *Metadata) *Metadata {
 	return md
 }
 
+func (a Asset) DeviceAssetID() string {
+	return fmt.Sprintf("%s-%d", path.Base(a.OriginalFileName), a.FileSize)
+}
+
 // LogValue returns a slog.Value representing the LocalAssetFile's properties.
 func (a Asset) LogValue() slog.Value {
 	return slog.GroupValue(
@@ -155,4 +162,29 @@ func (a *Asset) MergeTags(t2 []Tag) {
 			a.Tags = append(a.Tags, tag)
 		}
 	}
+}
+
+// GetChecksum returns the checksum of the asset.
+// If the checksum is already set, it returns it. Otherwise, it computes it.
+// Use this method to get the checksum of an asset.
+func (a *Asset) GetChecksum() (string, error) {
+	if a.Checksum != "" {
+		return a.Checksum, nil
+	}
+	if a.File.FS() == nil {
+		return "", errors.New("no file to compute checksum")
+	}
+
+	f, err := a.File.Open()
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	sha1Hash, err := hash.Base64Encode(hash.GetSHA1Hash(f))
+	if err != nil {
+		return "", err
+	}
+	a.Checksum = sha1Hash
+	return a.Checksum, nil
 }

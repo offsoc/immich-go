@@ -11,36 +11,6 @@
 - [PayPal Donation](https://www.paypal.com/donate/?hosted_button_id=VGU2SQE88T2T4)
 
 
-##  **:warning: BREAKING CHANGES** Upgrading from `immich-go` 0.22 and earlier
-
-`Immich-go` 0.23 and after adopts the double dashes `--option` Linux convention for command line options. Commands should be updated accordingly. 
-
-> ### Google photos takeout import
-> **prior 0.23**
-> ```
-> immich-go -server=URL -key=KEY upload -google-photos  {path/to/files}
-> ```
-> 
-> **0.23 and after**
-> ```
-> immich-go upload from-google-photos --server=URL --api-key=KEY {path/to/files}
-> ```
-
-> ### Folder import
-> 
-> **prior 0.23**
-> ```
-> immich-go -server=URL -key=KEY upload  {path/to/files}
-> ```
-> 
-> **0.23 and after**
-> ```
-> immich-go upload from-folder --server=URL --api-key=KEY {path/to/files}
-> ```
-
-
-
-Read the documentation below for full details.
 
 ## What Makes Immich-Go Special?
 
@@ -48,8 +18,12 @@ Read the documentation below for full details.
   * Immich-Go doesn't require NodeJS or Docker for installation. This makes it easy to get started, even for those less familiar with technical environments.
   * Immich-Go can run on either your workstation or a NAS.
 
+### Upload your existing photo collection to your Immich server:
+  * **Upload from Google Photos Takeouts:** Immich-Go can process massive archives downloaded from Google Photos using Google Takeout. It efficiently processes these archives while preserving valuable metadata like GPS location, capture date, and album information.
+  * **Upload from iCloud Takeouts:** Immich-Go can upload photos from an iCloud takeout archive, preserving the date of capture and album information.
+
 ### Handles Large Photo Collections:
-  * **Upload Large Google Photos Takeouts:** Immich-Go excels at handling massive archives downloaded from Google Photos using Google Takeout. It efficiently processes these archives while preserving valuable metadata like GPS location, capture date, and album information. Read the [best practices](#google-photos-best-practices) below for more information.
+  * **Upload Large Google Photos Takeouts:** Users have reported successfully uploading archives of over 100,000 photos. Read the [best practices](#google-photos-best-practices) below for more information.
   * **Upload Collections:** You can upload photos directly from your computer folders, folder trees, and compressed ZIP archives.
   * **Is Duplicate-aware:** Immich-Go identifies and discards duplicate photos, keeping only the highest-quality version on the server.
   * **Archive Your Immich Server:** Write the content of your Immich server to a folder tree, ready to be archived or migrated to another server.
@@ -90,11 +64,6 @@ The upgrade process consists of installing the new version over the previous one
 - For building from source:
   - Go 1.23 or higher
   - Git
-- Optional dependencies:
-  - ExifTool: Enhanced metadata extraction capabilities
-    - On Linux: `sudo apt-get install exiftool`
-    - On MacOS: `brew install exiftool`
-    - On Windows: Download from [ExifTool website](https://exiftool.org/)
 
 ## Pre-built Binaries
 
@@ -120,7 +89,7 @@ The easiest way to install Immich-Go is to download the pre-built binary for you
    - Linux: `immich-go_Linux_amd64.tar.gz`
    - FreeBSD: `immich-go_Freebsd_amd64.tar.gz`
    - and more...
-   
+
 3. Extract the archive:
    ```bash
    # For Linux/MacOS/FreeBSD
@@ -161,6 +130,25 @@ go build
 go install
 ```
 
+### Building in Termux
+The prebuilt `Linux_Arm64` binaries won't work in Termux for Android, so you have to build it yourself.
+You can follow the same build steps as above, but install `git` and `golang` via `pkg`.
+
+If you want to use `go install`, make sure to add `GOPATH/bin` to your `PATH`:
+```bash
+# Create or open .bashrc
+nano  ~/.bashrc
+
+# Add the following line in order to include GOPATH/bin in your $PATH
+export PATH=$PATH:$(go env GOPATH)/bin
+
+# Save and exit with Ctrl+X, then Y and Enter
+
+# Restart your session or apply changes to your current session with:
+source ~/.bashrc
+
+```
+
 ## Installation with Nix
 
 `immich-go` is packaged with [nix](https://nixos.org/) and distributed via [nixpkgs](https://search.nixos.org/packages?channel=unstable&type=packages&query=immich-go).
@@ -169,7 +157,7 @@ You can try `immich-go` without installing it with the following commands:
 ```bash
 nix-shell -I "nixpkgs=https://github.com/NixOS/nixpkgs/archive/nixos-unstable-small.tar.gz" -p immich-go
 # Or with flakes enabled
-nix run "github:nixos/nixpkgs?ref=nixos-unstable-small#immich-go" -- -help
+nix run "github:nixos/nixpkgs?ref=nixos-unstable-small#immich-go" -- --help
 ```
 
 Or you can add `immich-go` to your `configuration.nix` in the `environment.systemPackages` section.
@@ -198,12 +186,16 @@ immich-go command sub-command options path/to/files
 Commands must be combined with sub-commands and options to perform the required action.
 * immich-go
   * [upload](#the-upload-command)
-    * from-folder 
+    * from-folder
     * from-google-photos
+    * from-icloud
+    * from-picasa
     * from-immich
   * [archive](#the-archive-command)
     * from-folder
     * from-google-photos
+    * from-icloud
+    * from-picasa
     * from-immich
   * [stack](#the-stack-command)
   * version
@@ -251,10 +243,12 @@ The following options are shared by all commands:
 
 
 # The **upload** command:
-The **upload** command loads photos and videos from the source designated by the sub-command to the Immich server. 
+The **upload** command loads photos and videos from the source designated by the sub-command to the Immich server.
 **Upload** accepts three sub-commands:
   * [from-folder](#from-folder-sub-command) to upload photos from a local folder or a zipped archive
   * [from-google-photos](#from-google-photos-sub-command) to upload photos from a Google Photos takeout archive
+  * [from-icloud](#from-icloud-sub-command) to create a folder archive from an iCloud archive TODO
+  * [from-picasa](#from-picasa-sub-command)  to create a folder archive from a Picasa archive
   * [from-immich](#from-immich-sub-command) to upload photos from an Immich server to another Immich server
 
 Examples:
@@ -267,39 +261,52 @@ immich-go upload from-google-photos --server=http://your-ip:2283 --api-key=your-
 The **upload** command need the following options to manage the connection with the Immich server:
 
 
-| **Parameter**        | **Default value** | **Description**                                                                                                                    |
-| -------------------- | :---------------: | ---------------------------------------------------------------------------------------------------------------------------------- |
-| -s, --server         |                   | Immich server address (e.g http://your-ip:2283 or https://your-domain) (**MANDATORY**)                                             |
-| -k, --api-key        |                   | API Key (**MANDATORY**)                                                                                                            |
-| --api-trace          |      `FALSE`      | Enable trace of api calls                                                                                                          |
-| --client-timeout     |      `5m0s`       | Set server calls timeout                                                                                                           |
-| --device-uuid string |   `$LOCALHOST`    | Set a device UUID                                                                                                                  |
-| --dry-run            |                   | Simulate all server actions                                                                                                        |
-| --skip-verify-ssl    |      `FALSE`      | Skip SSL verification                                                                                                              |
-| --time-zone          |                   | Override the system time zone (example: Europe/Paris)                                                                              |
-| --session-tag        |      `FALSE`      | Tag uploaded photos with a tag "{immich-go}/YYYY-MM-DD HH-MM-SS"                                                                   |
-| --tag strings        |                   | Add tags to the imported assets. Can be specified multiple times. Hierarchy is supported using a / separator (e.g. 'tag1/subtag1') |
+| **Parameter**        | **Default value** | **Description**                                                                                                                           |
+| -------------------- | :---------------: | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| -s, --server         |                   | Immich server address (e.g http://your-ip:2283 or https://your-domain) (**MANDATORY**)                                                    |
+| -k, --api-key        |                   | API Key (**MANDATORY**)                                                                                                                   |
+| --admin-api-key      |                   | The Immichs admin's API key, used to pause and resume the server's jobs during operations (**MANDATORY** when uploading for a non-admin ) |
+| --no-ui              |      `FALSE`      | Disable the user interface                                                                                                                |
+| --api-trace          |      `FALSE`      | Enable trace of api calls                                                                                                                 |
+| --client-timeout     |       `20m`       | Set server calls timeout                                                                                                                  |
+| --device-uuid string |   `$LOCALHOST`    | Set a device UUID                                                                                                                         |
+| --dry-run            |                   | Simulate all server actions                                                                                                               |
+| --skip-verify-ssl    |      `FALSE`      | Skip SSL verification                                                                                                                     |
+| --time-zone          |                   | Override the system time zone (example: Europe/Paris)                                                                                     |
+| --session-tag        |      `FALSE`      | Tag uploaded photos with a tag "{immich-go}/YYYY-MM-DD HH-MM-SS"                                                                          |
+| --tag strings        |                   | Add tags to the imported assets. Can be specified multiple times. Hierarchy is supported using a / separator (e.g. 'tag1/subtag1')        |
+| --on-server-errors   |      `stop`       | Action to take on server errors, (stop,continue,\<n\> to stop after n errors)                                                             |
+| --pause-immich-jobs  |      `TRUE`       | Pause Immich server jobs during the upload process                                                                                        |
 
 
-## **--client-timeout** 
+## **--client-timeout**
 Increase the **--client-timeout** when you have some timeout issues with the server, especialy when uploading large files.
 
-## **--session-tag** 
+## **--session-tag**
 Thanks to the **--session-tag** option, it's easy to identify all photos uploaded during a session, and remove them if needed.
 This tag is formatted as `{immich-go}/YYYY-MM-DD HH-MM-SS`. The tag can be deleted without removing the photos.
 
+## **--overwrite**
+The `--overwrite` flag ensures that files on the server are always replaced with their local versions during the upload process. If a file does not exist on the server, it will be uploaded as a new file. This option is useful for ensuring that the server always has the latest version of your files.
+
+Example:
+```bash
+immich-go upload from-folder --server=http://your-ip:2283 --api-key=your-api-key --overwrite /path/to/your/photos
+```
 
 # The **archive** command:
 
-The **archive** command writes the content taken from the source given by the sub-command to a folder tree. 
+The **archive** command writes the content taken from the source given by the sub-command to a folder tree.
 The destination folder isn't wiped out before the operation, so it's possible to add new photos to an existing archive.
 
 The command accepts three sub-commands:
   * [from-folder](#from-folder-sub-command) to create a folder archive from a local folder or a zipped archive
   * [from-google-photos](#from-google-photos-sub-command) to create a folder archive from a Google Photos takeout archive
+  * [from-icloud](#from-icloud-sub-command) to create a folder archive from an iCloud archive TODO
+  * [from-picasa](#from-picasa-sub-command)  to create a folder archive from a Picasa archive
   * [from-immich](#from-immich-sub-command) to create a folder archive from an Immich server
 
-All photos and videos are sorted by date of capture, following this schema: `Folder/YYYY/YYYY-MM/photo.jpg`.
+All photos and videos are sorted by date of capture, following this schema: `Folder/YYYY/YYYY-MM/photo.ext`.
 
 Here is an example of what your folder structure might look like:
 
@@ -337,44 +344,44 @@ This folder tree is ready to be archived or migrated to another server.
 The general syntax is:
 
 ```bash
-immich-go archive from-sub-command --write-to-folder=folder options 
+immich-go archive from-sub-command --write-to-folder=folder options
 ```
 
 # **from-folder** sub command:
 
 The **from-folder** sub-command processes a folder tree to upload photos to the Immich server.
 
-| **Parameter**           |           **Default value**           | **Description**                                                                                                                                                               |
-| ----------------------- | :-----------------------------------: | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| --ban-file              | [See banned files](#banned-file-list) | Exclude a file based on a pattern (case-insensitive). Can be specified multiple times.                                                                                        |
-| --date-from-name        |                `TRUE`                 | Use the date from the filename if the date isn't available in the metadata (Only for jpg, mp4, heic, dng, cr2, cr3, arw, raf, nef, mov).                                      |
-| --date-range            |                                       | Only import photos taken within the specified date range. [See date range possibilities](#date-range)                                                                         |
-| --exclude-extensions    |                                       | Comma-separated list of extension to exclude. (e.g. .gif,.PM)                                                                                                                 |
-| --folder-as-album       |                `NONE`                 | Import all files in albums defined by the folder structure. Can be set to 'FOLDER' to use the folder name as the album name, or 'PATH' to use the full path as the album name |
-| --folder-as-tags        |                `FALSE`                | Use the folder structure as tags, (ex: the file  holiday/summer 2024/file.jpg will have the tag holiday/summer 2024)                                                          |
-| --album-path-joiner     |                `" / "`                | Specify a string to use when joining multiple folder names to create an album name (e.g. ' ',' - ')                                                                           |
-| --album-picasa          |                `FALSE`                | Use the Picasa album name found in `.picasa.ini` files                                                                                                                        |
-| --ignore-sidecar-files  |                `FALSE`                | Don't upload sidecar with the photo.                                                                                                                                          |
-| --include-extensions    |                  all                  | Comma-separated list of extension to include. (e.g. .jpg,.heic)                                                                                                               |
-| --into-album            |                                       | Specify an album to import all files into                                                                                                                                     |
-| --manage-burst          |                                       | Manage burst photos. Possible values: Stack, StackKeepRaw tackKeepJPEG                                                                                                        |
-| --manage-epson-fastfoto |                `FALSE`                | Manage Epson FastFoto file                                                                                                                                                    |
-| --manage-heic-jpeg      |                                       | Manage coupled HEIC and JPEG files. Possible values: KeepHeic, KeepJPG, StackCoverHeic, StackCoverJPG                                                                         |
-| --manage-raw-jpeg       |                                       | Manage coupled RAW and JPEG files. Possible values: KeepRaw, KeepJPG, StackCoverRaw, StackCoverJPG                                                                            |
-| --recursive             |                `TRUE`                 | Explore the folder and all its sub-folders                                                                                                                                    |
-| --session-tag           |                                       | Tag uploaded photos with a tag "{immich-go}/YYYY-MM-DD HH-MM-SS"                                                                                                              |
-| --tag                   |                                       | Add tags to the imported assets. Can be specified multiple times. Hierarchy is supported using a / separator (e.g. 'tag1/subtag1')                                            |
+| **Parameter**           |           **Default value**           | **Description**                                                                                                                                                                        |
+| ----------------------- | :-----------------------------------: | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| --ban-file              | [See banned files](#banned-file-list) | Exclude a file based on a pattern (case-insensitive). Can be specified multiple times.                                                                                                 |
+| --date-from-name        |                `TRUE`                 | Use the date from the filename if the date isn't available in the metadata (Only for jpg, mp4, heic, dng, cr2, cr3, arw, raf, nef, mov).                                               |
+| --date-range            |                                       | Only import photos taken within the specified date range. [See date range possibilities](#date-range)                                                                                  |
+| --exclude-extensions    |                                       | Comma-separated list of extension to exclude. (e.g. .gif,.PM)                                                                                                                          |
+| --folder-as-album       |                `NONE`                 | Import all files in albums defined by the folder structure. Can be set to 'FOLDER' to use the folder name as the album name, or 'PATH' to use the full path as the album name          |
+| --folder-as-tags        |                `FALSE`                | Use the folder structure as tags, (ex: the file  holiday/summer 2024/file.jpg will have the tag holiday/summer 2024)                                                                   |
+| --album-path-joiner     |                `" / "`                | Specify a string to use when joining multiple folder names to create an album name (e.g. ' ',' - ')                                                                                    |
+| --album-picasa          |                `FALSE`                | Use the Picasa album name found in `.picasa.ini` files                                                                                                                                 |
+| --ignore-sidecar-files  |                `FALSE`                | Don't upload sidecar with the photo.                                                                                                                                                   |
+| --include-extensions    |                 `all`                 | Comma-separated list of extension to include. (e.g. .jpg,.heic)                                                                                                                        |
+| --include-type          |                 `all`                 | Single file type to include. (`VIDEO` or `IMAGE`)                                                                                                                                      |
+| --into-album            |                                       | Specify an album to import all files into                                                                                                                                              |
+| --manage-burst          |                                       | Manage burst photos. Possible values: NoStack, Stack, StackKeepRaw, StackKeepJPEG.  [See option's details](#burst-detection-and-management)                                            |
+| --manage-epson-fastfoto |                `FALSE`                | Manage Epson FastFoto file                                                                                                                                                             |
+| --manage-heic-jpeg      |                                       | Manage coupled HEIC and JPEG files. Possible values: NoStack, KeepHeic, KeepJPG, StackCoverHeic, StackCoverJPG.     [See option's details](#management-of-coupled-heic-and-jpeg-files) |
+| --manage-raw-jpeg       |                                       | Manage coupled RAW and JPEG files. Possible values: NoStack, KeepRaw, KeepJPG, StackCoverRaw, StackCoverJPG. [See options's details](#management-of-coupled-raw-and-jpeg-files)        |
+| --recursive             |                `TRUE`                 | Explore the folder and all its sub-folders                                                                                                                                             |
+| --session-tag           |                                       | Tag uploaded photos with a tag "{immich-go}/YYYY-MM-DD HH-MM-SS"                                                                                                                       |
+| --tag                   |                                       | Add tags to the imported assets. Can be specified multiple times. Hierarchy is supported using a / separator (e.g. 'tag1/subtag1')                                                     |
 
 
 ## Date of capture
 
-The Immich server takes the date of capture from the metadata of the photo, or in the XMP sidecar file if present. 
+The Immich server takes the date of capture from the metadata of the photo, or in the XMP sidecar file if present.
 However, some photos may not have this information.  In this case, Immich-go can infer the date of capture from the filename.
 
 The option `--date-from-name` instructs Immich-go to extract the date of capture from the filename if the date isn't available in the metadata.
 
-Immich-go can extract the date of capture without the help of an external tool such as ExifTool. It supports basic formats .heic, .heif, .jpg, 
-.jpeg, .dng, .cr2, .mp4, .mov, .cr3. 
+Immich-go can extract the date of capture for the following formats: .heic, .heif, .jpg, .jpeg, .dng, .cr2, .mp4, .mov, .cr3..
 
 > Note: `--date-from-name` slows down the process because immich-go needs to parse files to check if the capture date is present in the file.
 
@@ -384,28 +391,29 @@ Immich-go can extract the date of capture without the help of an external tool s
 
 The **from-google-photos** sub-command processes a Google Photos takeout archive to upload photos to the Immich server.
 
-| **Parameter**             |           **Default value**           | **Description**                                                                                                                                                            |
-| ------------------------- | :-----------------------------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| --ban-file FileList       | [See banned files](#banned-file-list) | Exclude a file based on a pattern (case-insensitive). Can be specified multiple times.                                                                                     |
-| --date-range              |                                       | Only import photos taken within the specified date range [See date range possibilities](#date-range)                                                                       |
-| --exclude-extensions      |                                       | Comma-separated list of extension to exclude. (e.g. .gif, .PM)                                                                                                             |
-| --from-album-name string  |                                       | Only import photos from the specified Google Photos album                                                                                                                  |
-| -a, --include-archived    |                `TRUE`                 | Import archived Google Photos                                                                                                                                              |
-| --include-extensions      |                 `all`                 | Comma-separated list of extension to include. (e.g. .jpg, .heic)                                                                                                           |
-| -p, --include-partner     |                `TRUE`                 | Import photos from your partner's Google Photos account                                                                                                                    |
-| -t, --include-trashed     |                `FALSE`                | Import photos that are marked as trashed in Google Photos                                                                                                                  |
-| -u, --include-unmatched   |                `FALSE`                | Import photos that do not have a matching JSON file in the takeout                                                                                                         |
-| --include-untitled-albums |                `FALSE`                | Include photos from albums without a title in the import process                                                                                                           |
-| --manage-burst            |                                       | Manage burst photos. Possible values: Stack, StackKeepRaw, StackKeepJPEG. [See option's details](#burst-detection-and-management)                                          |
-| --manage-epson-fastfoto   |                `FALSE`                | Manage Epson FastFoto file (default: false)                                                                                                                                |
-| --manage-heic-jpeg        |                                       | Manage coupled HEIC and JPEG files. Possible values: KeepHeic, KeepJPG, StackCoverHeic, StackCoverJPG   [See option's details](#management-of-coupled-heic-and-jpeg-files) |
-| --manage-raw-jpeg         |                                       | Manage coupled RAW and JPEG files. Possible values: KeepRaw, KeepJPG, StackCoverRaw, StackCoverJPG. [See options's details](#management-of-coupled-raw-and-jpeg-files)     |
-| --partner-shared-album    |                                       | Add partner's photo to the specified album name                                                                                                                            |
-| --session-tag             |                `FALSE`                | Tag uploaded photos with a tag "{immich-go}/YYYY-MM-DD HH-MM-SS"                                                                                                           |
-| --sync-albums             |                `TRUE`                 | Automatically create albums in Immich that match the albums in your Google Photos takeout                                                                                  |
-| --tag strings             |                                       | Add tags to the imported assets. Can be specified multiple times. Hierarchy is supported using a / separator (e.g. 'tag1/subtag1')                                         |
-| --takeout-tag             |                `TRUE`                 | Tag uploaded photos with a tag "{takeout}/takeout-YYYYMMDDTHHMMSSZ"                                                                                                        |
-| --people-tag              |                `TRUE`                 | Tag uploaded photos with tags \"people/name\" found in the JSON file |
+| **Parameter**             |           **Default value**           | **Description**                                                                                                                                                                    |
+| ------------------------- | :-----------------------------------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| --ban-file FileList       | [See banned files](#banned-file-list) | Exclude a file based on a pattern (case-insensitive). Can be specified multiple times.                                                                                             |
+| --date-range              |                                       | Only import photos taken within the specified date range [See date range possibilities](#date-range)                                                                               |
+| --exclude-extensions      |                                       | Comma-separated list of extension to exclude. (e.g. .gif, .PM)                                                                                                                     |
+| --from-album-name string  |                                       | Only import photos from the specified Google Photos album                                                                                                                          |
+| -a, --include-archived    |                `TRUE`                 | Import archived Google Photos                                                                                                                                                      |
+| --include-extensions      |                 `all`                 | Comma-separated list of extension to include. (e.g. .jpg, .heic)                                                                                                                   |
+| --include-type            |                 `all`                 | Single file type to include. (`VIDEO` or `IMAGE`)                                                                                                                                  |
+| -p, --include-partner     |                `TRUE`                 | Import photos from your partner's Google Photos account                                                                                                                            |
+| -t, --include-trashed     |                `FALSE`                | Import photos that are marked as trashed in Google Photos                                                                                                                          |
+| -u, --include-unmatched   |                `FALSE`                | Import photos that do not have a matching JSON file in the takeout                                                                                                                 |
+| --include-untitled-albums |                `FALSE`                | Include photos from albums without a title in the import process                                                                                                                   |
+| --manage-burst            |                                       | Manage burst photos. Possible values: NoStack, Stack, StackKeepRaw, StackKeepJPEG. [See option's details](#burst-detection-and-management)                                         |
+| --manage-epson-fastfoto   |                `FALSE`                | Manage Epson FastFoto file (default: false)                                                                                                                                        |
+| --manage-heic-jpeg        |                                       | Manage coupled HEIC and JPEG files. Possible values: NoStack, KeepHeic, KeepJPG, StackCoverHeic, StackCoverJPG. [See option's details](#management-of-coupled-heic-and-jpeg-files) |
+| --manage-raw-jpeg         |                                       | Manage coupled RAW and JPEG files. Possible values: NoStack, KeepRaw, KeepJPG, StackCoverRaw, StackCoverJPG. [See options's details](#management-of-coupled-raw-and-jpeg-files)    |
+| --partner-shared-album    |                                       | Add partner's photo to the specified album name                                                                                                                                    |
+| --session-tag             |                `FALSE`                | Tag uploaded photos with a tag "{immich-go}/YYYY-MM-DD HH-MM-SS"                                                                                                                   |
+| --sync-albums             |                `TRUE`                 | Automatically create albums in Immich that match the albums in your Google Photos takeout                                                                                          |
+| --tag strings             |                                       | Add tags to the imported assets. Can be specified multiple times. Hierarchy is supported using a / separator (e.g. 'tag1/subtag1')                                                 |
+| --takeout-tag             |                `TRUE`                 | Tag uploaded photos with a tag "{takeout}/takeout-YYYYMMDDTHHMMSSZ"                                                                                                                |
+| --people-tag              |                `TRUE`                 | Tag uploaded photos with tags \"people/name\" found in the JSON file                                                                                                               |
 
 ## Google Photos Best Practices:
 
@@ -417,7 +425,7 @@ The **from-google-photos** sub-command processes a Google Photos takeout archive
 * **Importing Your Photos:**
   * If your takeout is in ZIP format, you can import it directly without needing to unzip the files first.
   * It's important to import all parts of the takeout together, as some data might be spread across multiple files. Use `/path/to/your/files/takeout-*.zip` as the file name.
-  * For **.tgz** files (compressed tar archives), you'll need to decompress all the files into a single folder before importing.
+  * For **.tgz** files (compressed tar archives), you'll need to decompress all the files into a single folder before importing. Then use the command `immich-go upload from-google-photos /path/to/your/files`.  
   * You can remove any unwanted files or folders from your takeout before importing.
   * Restarting an interrupted import won't cause any problems and will resume where it left off.
 
@@ -430,26 +438,78 @@ The **from-google-photos** sub-command processes a Google Photos takeout archive
 
 Immich-Go can tag all imported photos with a takeout tag. The tag is formatted as `{takeout}/takeout-YYYYMMDDTHHMMSSZ`. This tag can be used to identify all photos imported from a Google Photos takeout, making it easy to remove them if needed.
 
+
+# **from-icloud** sub command:
+
+The **from-icloud** sub-command processes an ICloud takeout.
+
+| **Parameter**        |           **Default value**           | **Description**                                                                                                                                                                        |
+| -------------------- | :-----------------------------------: | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| --memories           |                `FALSE`                | Import icloud memories as albums                                                                                                                                                       |
+| --ban-file           | [See banned files](#banned-file-list) | Exclude a file based on a pattern (case-insensitive). Can be specified multiple times.                                                                                                 |
+| --date-from-name     |                `TRUE`                 | Use the date from the filename if the date isn't available in the metadata (Only for jpg, mp4, heic, dng, cr2, cr3, arw, raf, nef, mov).                                               |
+| --date-range         |                                       | Only import photos taken within the specified date range. [See date range possibilities](#date-range)                                                                                  |
+| --exclude-extensions |                                       | Comma-separated list of extension to exclude. (e.g. .gif,.PM)                                                                                                                          |
+| --include-extensions |                 `all`                 | Comma-separated list of extension to include. (e.g. .jpg,.heic)                                                                                                                        |
+| --include-type       |                 `all`                 | Single file type to include. (`VIDEO` or `IMAGE`)                                                                                                                                      |
+| --into-album         |                                       | Specify an album to import all files into                                                                                                                                              |
+| --manage-burst       |                                       | Manage burst photos. Possible values: NoStack, Stack, StackKeepRaw, StackKeepJPEG.  [See option's details](#burst-detection-and-management)                                            |
+| --manage-heic-jpeg   |                                       | Manage coupled HEIC and JPEG files. Possible values: NoStack, KeepHeic, KeepJPG, StackCoverHeic, StackCoverJPG.     [See option's details](#management-of-coupled-heic-and-jpeg-files) |
+| --manage-raw-jpeg    |                                       | Manage coupled RAW and JPEG files. Possible values: NoStack, KeepRaw, KeepJPG, StackCoverRaw, StackCoverJPG. [See options's details](#management-of-coupled-raw-and-jpeg-files)        |
+| --session-tag        |                                       | Tag uploaded photos with a tag "{immich-go}/YYYY-MM-DD HH-MM-SS"                                                                                                                       |
+| --tag                |                                       | Add tags to the imported assets. Can be specified multiple times. Hierarchy is supported using a / separator (e.g. 'tag1/subtag1')                                                     |
+
+
+
+# **from-picasa** sub command:
+
+The **from-picasa** sub-command processes picasa file tree to upload photos to the Immich server.
+
+| **Parameter**           |           **Default value**           | **Description**                                                                                                                                                                        |
+| ----------------------- | :-----------------------------------: | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| --ban-file              | [See banned files](#banned-file-list) | Exclude a file based on a pattern (case-insensitive). Can be specified multiple times.                                                                                                 |
+| --date-from-name        |                `TRUE`                 | Use the date from the filename if the date isn't available in the metadata (Only for jpg, mp4, heic, dng, cr2, cr3, arw, raf, nef, mov).                                               |
+| --date-range            |                                       | Only import photos taken within the specified date range. [See date range possibilities](#date-range)                                                                                  |
+| --exclude-extensions    |                                       | Comma-separated list of extension to exclude. (e.g. .gif,.PM)                                                                                                                          |
+| --folder-as-album       |                `NONE`                 | Import all files in albums defined by the folder structure. Can be set to 'FOLDER' to use the folder name as the album name, or 'PATH' to use the full path as the album name          |
+| --folder-as-tags        |                `FALSE`                | Use the folder structure as tags, (ex: the file  holiday/summer 2024/file.jpg will have the tag holiday/summer 2024)                                                                   |
+| --album-path-joiner     |                `" / "`                | Specify a string to use when joining multiple folder names to create an album name (e.g. ' ',' - ')                                                                                    |
+| --include-extensions    |                 `all`                 | Comma-separated list of extension to include. (e.g. .jpg,.heic)                                                                                                                        |
+| --include-type          |                 `all`                 | Single file type to include. (`VIDEO` or `IMAGE`)                                                                                                                                      |
+| --into-album            |                                       | Specify an album to import all files into                                                                                                                                              |
+| --manage-burst          |                                       | Manage burst photos. Possible values: NoStack, Stack, StackKeepRaw, StackKeepJPEG.  [See option's details](#burst-detection-and-management)                                            |
+| --manage-epson-fastfoto |                `FALSE`                | Manage Epson FastFoto file                                                                                                                                                             |
+| --manage-heic-jpeg      |                                       | Manage coupled HEIC and JPEG files. Possible values: NoStack, KeepHeic, KeepJPG, StackCoverHeic, StackCoverJPG.     [See option's details](#management-of-coupled-heic-and-jpeg-files) |
+| --manage-raw-jpeg       |                                       | Manage coupled RAW and JPEG files. Possible values: NoStack, KeepRaw, KeepJPG, StackCoverRaw, StackCoverJPG. [See options's details](#management-of-coupled-raw-and-jpeg-files)        |
+| --recursive             |                `TRUE`                 | Explore the folder and all its sub-folders                                                                                                                                             |
+| --session-tag           |                                       | Tag uploaded photos with a tag "{immich-go}/YYYY-MM-DD HH-MM-SS"                                                                                                                       |
+| --tag                   |                                       | Add tags to the imported assets. Can be specified multiple times. Hierarchy is supported using a / separator (e.g. 'tag1/subtag1')                                                     |
+
+
+# Options details
+
 ## Burst Detection and Management
 
 The system detects burst photos in the following cases:
 
 | Case                | Description                                                                                                                                                          |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Series of photos    | When the time difference between two photos is less than 500 ms                                                                                                      |
+| Series of photos    | When the time difference between two photos is less than 900 ms                                                                                                      |
 | Huawei smartphones  | Based on file names: <br>- IMG_20231014_183246_BURST001_COVER.jpg<br>- IMG_20231014_183246_BURST002.jpg<br>- IMG_20231014_183246_BURST003.jpg                        |
 | Nexus smartphones   | Based on file names:<br>- 00001IMG_00001_BURST20171111030039.jpg<br>-...<br>-00014IMG_00014_BURST20171111030039.jpg<br>-00015IMG_00015_BURST20171111030039_COVER.jpg |
 | Pixel smartphones   | Based on file names:<br>- PXL_20230330_184138390.MOTION-01.COVER.jpg<br>- PXL_20230330_184138390.MOTION-02.ORIGINAL.jpg                                              |
 | Samsung smartphones | Based on file names:<br>- 20231207_101605_001.jpg<br>- 20231207_101605_002.jpg<br>- 20231207_101605_xxx.jpg                                                          |
 | Sony Xperia         | Based on file names:<br>- DSC_0001_BURST20230709220904977.JPG<br>- ...<br>- DSC_0035_BURST20230709220904977_COVER.JPG                                                |
+| Nothing Phones      | Based on file names:<br>- 00001IMG_00001_BURST1723801037429_COVER.jpg<br>- 00002IMG_00002_BURST1723801037429.jpg<br>- ...<br>                                        |
 
 The option `--manage-burst` instructs Immich-Go on how to manage burst photos. The following options are available:
 
 | Option          | Description                                                                                                                                      |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `stack`         | Stack all burst photos together. When the cover photo can't be identified with the file name, the first photo of the burst is used as the cover. |
-| `stackKeepRaw`  | Stack all burst photos together. Keep only the RAW photos.                                                                                       |
-| `stackKeepJPEG` | Stack all burst photos together. Keep only the JPEG photos.                                                                                      |
+| `NoStack`       | Do not stack burst photos.                                                                                                                       |
+| `Stack`         | Stack all burst photos together. When the cover photo can't be identified with the file name, the first photo of the burst is used as the cover. |
+| `StackKeepRaw`  | Stack all burst photos together. Keep only the RAW photos.                                                                                       |
+| `StackKeepJPEG` | Stack all burst photos together. Keep only the JPEG photos.                                                                                      |
 
 ## Management of Coupled HEIC and JPEG Files
 
@@ -457,6 +517,7 @@ The option `--manage-heic-jpeg` instructs Immich-Go on how to manage coupled HEI
 
 | Option           | Description                                                         |
 | ---------------- | ------------------------------------------------------------------- |
+| `NoStack`        | Do not stack HEIC and JPEG files.                                   |
 | `KeepHeic`       | Keep only the HEIC file.                                            |
 | `KeepJPG`        | Keep only the JPEG file.                                            |
 | `StackCoverHeic` | Stack the HEIC and JPEG files together. The HEIC file is the cover. |
@@ -468,6 +529,7 @@ The option `--manage-raw-jpeg` instructs Immich-Go on how to manage coupled RAW 
 
 | Option          | Description                                                        |
 | --------------- | ------------------------------------------------------------------ |
+| `NoStack`       | Do not stack RAW and JPEG files.                                   |
 | `KeepRaw`       | Keep only the RAW file.                                            |
 | `KeepJPG`       | Keep only the JPEG file.                                           |
 | `StackCoverRaw` | Stack the RAW and JPEG files together. The RAW file is the cover.  |
@@ -489,6 +551,7 @@ The sub-command **from-immich** processes an Immich server to upload photos to a
 
 | **Parameter**                  | **Default value** | **Description**                                                                      |
 | ------------------------------ | :---------------: | ------------------------------------------------------------------------------------ |
+| --exclude-extensions           |                   | Comma-separated list of extension to exclude. (e.g. .gif,.PM)                        |
 | --from-server                  |                   | Immich server address (e.g http://your-ip:2283 or https://your-domain)               |
 | --from-api-key string          |                   | Immich API Key                                                                       |
 | --from-album                   |                   | Get assets only from those albums, can be used multiple times                        |
@@ -496,26 +559,28 @@ The sub-command **from-immich** processes an Immich server to upload photos to a
 | --from-client-timeout duration |      `5m0s`       | Set server calls timeout                                                             |
 | --from-date-range              |                   | Get assets only within this date range.  [See date range possibilities](#date-range) |
 | --from-skip-verify-ssl         |      `FALSE`      | Skip SSL verification                                                                |
+| --include-extensions           |       `all`       | Comma-separated list of extension to include. (e.g. .jpg, .heic)                     |
+| --include-type                 |       `all`       | Single file type to include. (`VIDEO` or `IMAGE`)                                    |
 
 
 # The **stack** command:
-The stack command open the immich server, for the user associated with the the API-KEY, and stacks related photos together. 
+The stack command open the immich server, for the user associated with the the API-KEY, and stacks related photos together.
 
 The command accepts the following options:
 
-| **Parameter**           | **Default value** | **Description**                                                                                                                                                            |
-| ----------------------- | :---------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| -s, --server            |                   | Immich server address (e.g http://your-ip:2283 or https://your-domain) (**MANDATORY**)                                                                                     |
-| -k, --api-key           |                   | API Key (**MANDATORY**)                                                                                                                                                    |
-| --api-trace             |      `FALSE`      | Enable trace of api calls                                                                                                                                                  |
-| --client-timeout        |      `5m0s`       | Set server calls timeout                                                                                                                                                   |
-| --dry-run               |                   | Simulate all server actions...                                                                                                                                             |
-| --skip-verify-ssl       |      `FALSE`      | Skip SSL verification                                                                                                                                                      |
-| --time-zone             |                   | Override the system time zone (example: Europe/Paris)                                                                                                                      |
-| --manage-burst          |                   | Manage burst photos. Possible values: Stack, StackKeepRaw, StackKeepJPEG. [See option's details](#burst-detection-and-management)                                          |
-| --manage-epson-fastfoto |      `FALSE`      | Manage Epson FastFoto file                                                                                                                                                 |
-| --manage-heic-jpeg      |                   | Manage coupled HEIC and JPEG files. Possible values: KeepHeic, KeepJPG, StackCoverHeic, StackCoverJPG   [See option's details](#management-of-coupled-heic-and-jpeg-files) |
-| --manage-raw-jpeg       |                   | Manage coupled RAW and JPEG files. Possible values: KeepRaw, KeepJPG, StackCoverRaw, StackCoverJPG. [See options's details](#management-of-coupled-raw-and-jpeg-files)     |
+| **Parameter**           | **Default value** | **Description**                                                                                                                                                                     |
+| ----------------------- | :---------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| -s, --server            |                   | Immich server address (e.g http://your-ip:2283 or https://your-domain) (**MANDATORY**)                                                                                              |
+| -k, --api-key           |                   | API Key (**MANDATORY**)                                                                                                                                                             |
+| --api-trace             |      `FALSE`      | Enable trace of api calls                                                                                                                                                           |
+| --client-timeout        |      `5m0s`       | Set server calls timeout                                                                                                                                                            |
+| --dry-run               |                   | Simulate all server actions...                                                                                                                                                      |
+| --skip-verify-ssl       |      `FALSE`      | Skip SSL verification                                                                                                                                                               |
+| --time-zone             |                   | Override the system time zone (example: Europe/Paris)                                                                                                                               |
+| --manage-burst          |                   | Manage burst photos. Possible values: NoStack, Stack, StackKeepRaw, StackKeepJPEG. [See option's details](#burst-detection-and-management)                                          |
+| --manage-epson-fastfoto |      `FALSE`      | Manage Epson FastFoto file                                                                                                                                                          |
+| --manage-heic-jpeg      |                   | Manage coupled HEIC and JPEG files. Possible values: NoStack, KeepHeic, KeepJPG, StackCoverHeic, StackCoverJPG   [See option's details](#management-of-coupled-heic-and-jpeg-files) |
+| --manage-raw-jpeg       |                   | Manage coupled RAW and JPEG files. Possible values: NoStack, KeepRaw, KeepJPG, StackCoverRaw, StackCoverJPG. [See options's details](#management-of-coupled-raw-and-jpeg-files)     |
 
 
 # Additional information and best practices
@@ -549,7 +614,7 @@ Those files are generated by the **archive** command. Their are used to restore 
     {
       "value": "USA/California/San Francisco"
     },
-  
+
   ],
   "rating": 5,
   "trashed": false,
@@ -626,7 +691,7 @@ immich-go upload from-immich --from-server=http://source-ip:2283 --from-api-key=
 To import photos taken within a specific date range from a local folder, use the following command:
 
 ```bash
-immich-go upload from-folder --server=http://your-ip:2283 --api-key=your-api-key --exiftool-enabled --date-range=2022-01-01,2022-12-31 /path/to/your/photos
+immich-go upload from-folder --server=http://your-ip:2283 --api-key=your-api-key --date-range=2022-01-01,2022-12-31 /path/to/your/photos
 ```
 
 
@@ -638,9 +703,8 @@ This program uses the following 3rd party libraries:
 - [https://github.com/rivo/tview](https://github.com/rivo/tview) Terminal User Interface
 
 A big thank you to the project contributors:
-- [rodneyosodo](https://github.com/rodneyosodo) GitHub CI, Go linter, and advice 
+- [rodneyosodo](https://github.com/rodneyosodo) GitHub CI, Go linter, and advice
 - [sigmahour](https://github.com/sigmahour) SSL management
 - [mrwulf](https://github.com/mrwulf) Partner sharing album
 - [erkexzcx](https://github.com/erkexzcx) Date determination based on file path and file name
 - [benjamonnguyen](https://github.com/benjamonnguyen) Tag API calls
-
