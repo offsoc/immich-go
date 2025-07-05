@@ -4,9 +4,11 @@ on:
  pull_request:
    branches:
      - main
+     - next
  push:
    branches:
      - main
+     - next
  workflow_dispatch:
 
 jobs:
@@ -39,4 +41,4 @@ jobs:
 
      - name: Run tests
        run: |
-         go test --race -v -count=1 -coverprofile=coverage.out ./...
+         go test -race -v -count=1 -coverprofile=coverage.out ./...
